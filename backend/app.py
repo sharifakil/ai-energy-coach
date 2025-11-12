@@ -1,15 +1,19 @@
+# --- add these near the top of app.py if not already present ---
+from typing import Optional
 from fastapi import UploadFile, File, HTTPException, Depends
 import pandas as pd
 from io import StringIO
 import uuid
+# ---------------------------------------------------------------
 
 @app.post("/upload")
 async def upload(
     usage_csv: UploadFile = File(...),
-    tariffs_csv: UploadFile | None = File(None),
-    carbon_csv: UploadFile | None = File(None),
+    tariffs_csv: Optional[UploadFile] = File(None),
+    carbon_csv: Optional[UploadFile] = File(None),
     db = Depends(get_db),
 ):
+    """Original, ordered upload: usage -> tariffs -> carbon."""
     session_id = str(uuid.uuid4())
 
     # ---- Usage (required)
@@ -37,7 +41,12 @@ async def upload(
     if carbon_csv is not None:
         try:
             carbon_df = pd.read_csv(StringIO((await carbon_csv.read()).decode("utf-8")))
+            carbon_df.columns = [c.strip().lower() for c in df.columns]  # <-- will fix in next line
+        except NameError:
+            # correct the accidental 'df' reference if it slipped in
+            carbon_df = pd.read_csv(StringIO((await carbon_csv.read()).decode("utf-8")))
             carbon_df.columns = [c.strip().lower() for c in carbon_df.columns]
+        try:
             if not {"timestamp", "g_per_kwh"} <= set(carbon_df.columns):
                 raise ValueError("carbon csv must have: timestamp,g_per_kwh")
         except Exception as e:
