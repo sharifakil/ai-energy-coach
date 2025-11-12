@@ -1,13 +1,14 @@
 import { useState } from "react";
 const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
-const [detected, setDetected] = useState(null);
 
 export default function UploadCard({ onUploaded }) {
   const [usage, setUsage] = useState(null);
   const [tariffs, setTariffs] = useState(null);
   const [carbon, setCarbon] = useState(null);
+
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState("");          // message / errors shown under button
+  const [detected, setDetected] = useState(null); // { usage:bool, tariffs:bool, carbon:bool }
 
   // pretty-print FastAPI error payloads
   function extractErrorMessage(text, json) {
@@ -20,11 +21,12 @@ export default function UploadCard({ onUploaded }) {
 
   const submit = async () => {
     if (!usage && !tariffs && !carbon) {
-      return alert("Please upload at least one CSV (usage).");
+      setMsg("Please upload at least the usage CSV.");
+      return;
     }
 
     const fd = new FormData();
-    // ⬇️ All files go under the SAME key: 'files'
+    // send all files under the SAME field: 'files'
     if (usage)   fd.append("files", usage);
     if (tariffs) fd.append("files", tariffs);
     if (carbon)  fd.append("files", carbon);
@@ -32,12 +34,11 @@ export default function UploadCard({ onUploaded }) {
     try {
       setLoading(true);
       setMsg("Uploading and analyzing…");
-      const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
 
-      // read as text first so we can show nice errors
+      const res = await fetch(`${API}/upload`, { method: "POST", body: fd });
       const text = await res.text();
       let data = null;
-      try { data = JSON.parse(text); } catch { /* keep text */ }
+      try { data = JSON.parse(text); } catch {}
 
       if (!res.ok) {
         const friendly = extractErrorMessage(text, data);
@@ -45,10 +46,11 @@ export default function UploadCard({ onUploaded }) {
       }
 
       const sessionId = data?.session_id;
-     setDetected(data?.detected || null);
- if (!sessionId) throw new Error("No session_id returned from server.");
-      onUploaded(sessionId);
+      if (!sessionId) throw new Error("No session_id returned from server");
+      setDetected(data?.detected || null);
       setMsg("Analysis complete ✅");
+
+      onUploaded(sessionId);
     } catch (e) {
       setMsg(`Error: ${e.message || String(e)}`);
     } finally {
@@ -62,45 +64,47 @@ export default function UploadCard({ onUploaded }) {
 
       <div className="space-y-3 text-sm">
         <div>
-          <label className="block text-gray-700 mb-1 font-medium">Usage CSV (timestamp,kwh)</label>
+          <label className="block text-gray-700 mb-1 font-medium">
+            Usage CSV (timestamp,kwh)
+          </label>
           <input type="file" accept=".csv" onChange={e=>setUsage(e.target.files[0])} />
         </div>
         <div>
-          <label className="block text-gray-700 mb-1 font-medium">Tariffs CSV (timestamp,price_per_kwh)</label>
+          <label className="block text-gray-700 mb-1 font-medium">
+            Tariffs CSV (timestamp,price_per_kwh)
+          </label>
           <input type="file" accept=".csv" onChange={e=>setTariffs(e.target.files[0])} />
         </div>
         <div>
-          <label className="block text-gray-700 mb-1 font-medium">Carbon CSV (timestamp,g_per_kwh)</label>
+          <label className="block text-gray-700 mb-1 font-medium">
+            Carbon CSV (timestamp,g_per_kwh)
+          </label>
           <input type="file" accept=".csv" onChange={e=>setCarbon(e.target.files[0])} />
         </div>
       </div>
 
       <button
         onClick={submit}
-    {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
-
-    {detected && (
-      <p className="text-xs text-gray-600 mt-2">
-        Detected → {detected.usage ? "usage ✓" : "usage ✗"} ·
-        {detected.tariffs ? " tariffs ✓" : " tariffs ✗"} ·
-        {detected.carbon ? " carbon ✓" : " carbon ✗"}
-      </p>
-    )}
-    <p className="text-[11px] text-gray-400 mt-2">
-      You can drop files in any order. We auto-detect by headers.
-    </p>
-
         disabled={loading}
         className="mt-4 w-full md:w-auto px-4 py-2 rounded-xl bg-black text-white hover:bg-gray-800 disabled:opacity-60"
       >
         {loading ? "Analyzing…" : "Analyze"}
       </button>
 
+      {/* status / errors */}
       {msg && <p className="text-xs text-gray-600 mt-2">{msg}</p>}
 
-      <p className="text-[11px] text-gray-400 mt-3">
+      {/* detected file types (shown after successful upload) */}
+      {detected && (
+        <p className="text-xs text-gray-600 mt-2">
+          Detected → {detected.usage ? "usage ✓" : "usage ✗"} ·
+          {detected.tariffs ? " tariffs ✓" : " tariffs ✗"} ·
+          {detected.carbon ? " carbon ✓" : " carbon ✗"}
+        </p>
+      )}
+
+      <p className="text-[11px] text-gray-400 mt-2">
         You can drop files in any order. We auto-detect by headers.
-        <br />
         Required headers → usage: <code>timestamp,kwh</code> · tariffs: <code>timestamp,price_per_kwh</code> · carbon: <code>timestamp,g_per_kwh</code>.
       </p>
     </div>
